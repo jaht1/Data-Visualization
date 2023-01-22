@@ -1,0 +1,1558 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Immigrant deaths</title>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <style></style>
+  </head>
+  <body>
+    <script>
+
+      // Bakgrundsfärg
+      var back_col = "#ffffff";
+
+      // Färgerna
+      var main_col = "#4d4dff";
+      var title_col = "#2a2a9f";
+      var subtitle_col = "#ffffff";
+      var white_col = "#ffffff";
+      var light_col = "#9f9fff";
+      var moderate_col = "#4d4dff";
+      var dark_col = "#e6e6e6";
+      var border_col = "#f2f2f2";
+
+      //Färgen på länderna
+      var country_col = "#333333";
+      var region_over_col = "#e6e6e6";
+
+      var tooltip_col = "#fff";
+      var blue_col = "#0000ff";
+
+      //Hover
+      var button_over_col = "#f9f9f9";
+      var region_over_col = "#4d4d4d";
+
+      var regions_en = [
+        "Mediterranean",
+        "Africa",
+        "Asia",
+        "US-Mexico Border",
+        "Central America",
+        "Caribbean",
+        "Europe",
+        "Middle East",
+        "South America",
+        "North America",
+      ];
+
+      var regions_cols = [
+        "#3e3ec9", 
+        "#FF6699", 
+        "#faff69", 
+        "#55a630", 
+        "#FFA726", 
+        "#5af2b4", 
+        "#279fdb", 
+        "#CC66FF", 
+        "#D3D3D3", 
+        "#BC8F8F", 
+      ];
+
+      var causes_en = [
+        "Drowning",
+        "Starvation / Dehydration",
+        "Sickness",
+        "Unknown / Other",
+        "Accident",
+        "Mixed",
+        "Shooting",
+        "Harsh Conditions",
+        "Asphyxiation",
+        "Violence",
+      ];
+
+      var causes_cols = [
+        "#3e3ec9", 
+        "#5af2b4", 
+        "#faff69", 
+        "#CC66FF", 
+        "#FFA726", 
+        "#D3D3D3", 
+        "#FF6699", 
+        "#BC8F8F", 
+        "#279fdb", 
+        "#55a630", 
+      ];
+      
+      // Marginal
+      var margin = { top: 65, right: 50, bottom: 20, left: 50 },
+      width = 1200 - margin.left - margin.right,
+      height = 740 - margin.top - margin.bottom;
+
+      // Bakgrund
+      d3.select("body")
+        .style("background", back_col)
+        .style("font-family", "Verdana, Geneva, sans-serif")
+        .attr("height", "700px");
+
+      // Div för svg
+      var div_main = d3
+      .select("body")
+      .append("div")
+      .attr("id", "div_main")
+      .style("margin", "50px auto");
+
+      // Tidsvariabler
+      var in_delay = 20;
+      var tot_delay = 5505 * in_delay;
+      var main_dots_time = 3000;
+      var contour_dots_time1 = 600;
+      var contour_dots_time2 = 1000;
+      var contour_dots_delay = 3;
+
+
+
+      // Svg board
+      var svg = div_main
+        .append("svg")
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .style("display", "block")
+        .style("margin", "0px auto")
+        .style("background", back_col)
+        .append("g")
+        .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+      // Rubrik och underrubrik
+      // Rubik
+      var story = svg
+        .append("image")
+        .attr("width", 480)
+        .attr("height", 100)
+        .style("opacity", 1)
+        .attr("transform", "translate(-20,-70)");
+
+      // Underrubrik
+      svg
+        .append("text")
+        .text("Immigrant deaths")
+        .attr("x", 450)
+        .attr("y", 0)
+        .style("fill", main_col)
+        .style("font", "20px Arial");
+
+      // Banner
+      var story = svg
+        .append("image")
+        .attr("width", 1160)
+        .attr("height", 170)
+        .style("opacity", 1)
+        .attr("transform", "translate(-20,-110)");
+
+      // Geografisk data
+
+      const dataFile =
+        "https://raw.githubusercontent.com/mohamadwaked/classico/master/p0017_dataset.csv";
+      const geoFile =
+        "https://raw.githubusercontent.com/mohamadwaked/classico/master/world_map_ar.geojson";
+
+
+
+      var map = {};
+      var dataset = {};
+
+      Promise.all([
+        d3.json(geoFile),
+        d3.csv(dataFile, function (row) {
+          return {
+            serial: +row.serial,
+            date: parseTime(row.date),
+            region: row.region,
+            year: row.year,
+            // Nummervärde
+            missing: +row.total_death_missing,
+            cause: row.cause_of_death,
+            random: row.random,
+            lat: +row.lat,
+            lon: +row.lon,
+            cord: [+row.lon, +row.lat],
+            //Secondary nummervärde
+            year_avg: +row.year_incidents,
+          };
+        }),
+      ]).then(function ([shapes, data]) {
+        map.features = shapes.features;
+        dataset = data;
+
+        popScale.domain(d3.extent(map.features, (d) => d.properties.density));
+
+        // Kallar på draw
+        draw();
+      });
+
+      // Kartan
+
+      // Projektion
+      const projection = d3
+        .geoNaturalEarth1() 
+        .scale(200)
+        .translate([width / 2 - 140, height / 2 + 10]);
+
+      // Genererar pathen
+      const geoPath = d3.geoPath().projection(projection);
+
+      // Skalan
+
+      // Cirkelns skala
+      var circleScale = d3.scaleSqrt().domain([0, 10]).range([0, 5]);
+
+      // Area skala
+      var areaScale = d3.scaleSqrt().domain([0, 800]).range([0.6, 7]);
+
+      // Färgskala
+      var colorScale = d3
+        .scaleLinear()
+        .domain([0, 800])
+        .range([moderate_col, light_col]);
+
+      // Opasitetens skala
+      var opacityScale = d3.scaleLinear().domain([0, 600]).range([0.5, 0.9]); // when using colors the scale has to start at 0.4
+
+      // Projektionens opasitetsskala
+      var projOpacScale = d3.scaleLinear().domain([0, 1000]).range([0.1, 0.9]); // when using colors the scale has to start at 0.4
+
+      // Projektionens färgskala
+      var projColorScale = d3
+        .scaleLinear()
+        .domain([0, 300])
+        .range(["grey", white_col]);
+
+      const popScale = d3.scaleSequentialSqrt(d3.interpolateBlues);
+
+      // Regionernas färgskala
+      var regionScale = d3
+        .scaleOrdinal()
+        .domain(regions_en)
+        .range(regions_cols);
+
+      // Dödsorsakernas färgskala
+      var causeScale = d3.scaleOrdinal().domain(causes_en).range(causes_cols);
+
+      // Time parse format
+
+      // Parse datum
+      var parseTime = d3.timeParse("%e-%b-%Y");
+      console.log(parseTime("9-Feb-1917")); // test the formula
+
+      // Formatera datum
+      var formatTime = d3.timeFormat("%e %b %y");
+      console.log(formatTime(new Date())); // test the formula
+
+      // Axelns skala
+      var timeScale = d3
+        .scaleTime()
+        .domain([parseTime("1-Jan-2014"), parseTime("26-Jun-2019")])
+        .range([0, width - 150]);
+
+      var timeAxis = d3
+        .axisBottom(timeScale)
+        .ticks(7)
+        .tickSizeInner(10)
+        .tickSizeOuter(0)
+        .tickPadding(35);
+
+      // draw funktion
+      function draw() {
+        // regionernas path
+        svg
+          .selectAll("path.region")
+          .data(map.features)
+          .enter()
+          .append("path")
+          .attr("class", "region")
+          .attr("d", geoPath)
+          .style("fill", country_col)
+          //.style("fill-opacity", "0")
+          .style("stroke", border_col)
+          .style("stroke-width", "0.4");
+
+        // cirklarna
+        svg
+          .selectAll("circle.main_circles")
+          .data(dataset)
+          .enter()
+          .append("circle")
+          .attr("class", "main_circles")
+          .attr("cx", (d) => projection(d.cord)[0])
+          .attr("stroke-width", 0.4)
+          .style("stroke-opacity", (d) => opacityScale(d.missing) + 0.1)
+          .attr("cy", (d) => projection(d.cord)[1])
+          .attr("r", (d) => areaScale(d.missing))
+          .style("stroke", (d) => colorScale(d.missing))
+          .style("fill", (d) => colorScale(d.missing))
+          .style("fill-opacity", (d) => opacityScale(d.missing) + 0.2);
+
+        // cirklarnas konturer
+        svg
+          .selectAll("circle.contour_circles")
+          .data(dataset)
+          .enter()
+          .append("circle")
+          .attr("class", "contour_circles")
+          .style("stroke-opacity", 0.085)
+          .attr("stroke-width", 0.2)
+          .attr("cx", (d) => projection(d.cord)[0])
+          .attr("cy", (d) => projection(d.cord)[1])
+          .attr("r", (d) => areaScale(d.missing) + circleScale(5))
+          .style("stroke", white_col)
+          .style("fill", white_col)
+          .style("fill-opacity", 0);
+
+        // täck med rektangel
+        var rect = svg
+          .append("rect")
+          .attr("x", 0)
+          .attr("y", 550)
+          .attr("width", width)
+          .attr("height", 200)
+          .style("fill", back_col);
+
+        // tidlinje
+
+        // rita axlarna
+        svg
+          .append("g")
+          .classed("axe", true)
+          .attr("transform", "translate(0 , 610)")
+          .call(timeAxis);
+
+        // axlarnas formattering
+
+        // formattera domainen
+        d3.selectAll("g.axe .domain, g.axe g.tick line")
+          .style("stroke", main_col)
+          .style("opacity", 0.2);
+
+        // centrera ticks
+        d3.selectAll("g.axe g.tick line")
+          .attr("y1", -3)
+          .attr("y2", 4)
+          .style("opacity", 0.8)
+          .style("stroke", main_col);
+
+        // font storlek och opacitet
+        d3.selectAll("g.axe g.tick text")
+          .style("font-size", "8px")
+          .style("color", main_col)
+          .style("opacity", 1);
+
+        // cirklarna i tidsdlinjen
+
+        // draw cirklarna i tidslinjen
+        svg
+          .selectAll("circle.time_circles")
+          .data(dataset) 
+          .enter()
+          .append("circle")
+          .classed("time_circles", true)
+          .attr("stroke-width", 0.4)
+          .style("stroke-opacity", (d) => opacityScale(d.missing) + 0.1)
+          .attr("cx", (d) => timeScale(d.date))
+          .attr("cy", (d) => 570 + d.random * 90)
+          .attr("r", (d) => areaScale(d.missing))
+          .style("fill-opacity", (d) => opacityScale(d.missing))
+          .style("fill", (d) => colorScale(d.missing))
+          .style("stroke", (d) => colorScale(d.missing));
+
+        // projektioner i tidslinjen
+
+        var proj_stroke = "0.2px";
+
+        svg
+          .selectAll("line.time_lines")
+          .data(dataset) 
+          .enter()
+          .append("line")
+          .classed("time_lines", true)
+          .attr("x1", (d) => timeScale(d.date))
+          .attr("y1", (d) => 570 + d.random * 80)
+          .attr("x2", function (d) {
+            return projection(d.cord)[0];
+          })
+          .attr("y2", function (d) {
+            return projection(d.cord)[1];
+          })
+          .style("stroke", (d) => projColorScale(d.missing))
+          .style("stroke-opacity", (d) => projOpacScale(d.missing))
+          .style("stroke-width", proj_stroke);
+
+        // play-funktionen
+
+        var play = function (d) {
+          // göm knappen när igång
+          d3.select(this)
+            .transition()
+            .duration(2000)
+            .style("opacity", 0)
+            .transition()
+            .duration(2000)
+            .delay(tot_delay + 1000)
+            .style("opacity", 1);
+
+          d3.select(".start_circle")
+            .transition()
+            .duration(2000)
+            .attr("stroke-width", 1)
+            .style("fill-opacity", 1)
+            .transition()
+            .duration(2000)
+            .delay(tot_delay + 1000)
+            .attr("r", 2)
+            .attr("r", 10)
+            .attr("stroke-width", 0.7)
+            .style("fill-opacity", 0);
+
+          // play projektionerna i linjen
+          d3.selectAll("line.time_lines")
+            .style("stroke-width", "0px")
+            .style("stroke-opacity", (d) => projOpacScale(d.missing))
+            .each(function (d, i) {
+              d3.select(this)
+                .transition()
+                .duration(3000)
+                .delay(i * in_delay)
+                .style("stroke-width", proj_stroke);
+            });
+
+          // play cirklarna
+          d3.selectAll("circle.main_circles")
+            .attr("r", 0)
+            .each(function (d, i) {
+              d3.select(this)
+                .transition()
+                .duration(main_dots_time)
+                .delay(i * in_delay)
+                .attr("r", (d) => areaScale(d.missing));
+            });
+
+          // play cirklarnas konturer
+          d3.selectAll("circle.contour_circles")
+            .attr("r", 0)
+            .each(function (d, i) {
+              d3.select(this)
+                .transition()
+                .duration(contour_dots_time1)
+                .attr("r", (d) => areaScale(d.missing) + circleScale(0))
+                .transition()
+                .duration(contour_dots_time2)
+                .delay(contour_dots_delay)
+                .attr("r", (d) => areaScale(d.missing) + circleScale(5))
+                .style("stroke-opacity", 0.085)
+                .attr("stroke-width", 0.2)
+                .delay(i * in_delay)
+                .style("stroke", white_col)
+                .attr("stroke-width", 0.8)
+                .style("stroke-opacity", 0.9)
+                .style("fill-opacity", 0.7)
+                .style("fill-opacity", 0);
+            });
+
+          // play cirklarnas tider
+          d3.selectAll("circle.time_circles")
+            .attr("r", (d) => Math.random())
+            .attr("cx", (d) => timeScale(d.date))
+            .attr("cy", (d) => 570 + d.random * 80)
+            .attr("stroke-width", 1)
+            .style("stroke-opacity", 0)
+            .style("fill-opacity", 0)
+            .each(function (d, i) {
+              d3.select(this)
+                .transition()
+                .duration(3000)
+                .delay(i * in_delay)
+                .attr("cx", (d) => timeScale(d.date))
+                .attr("cy", (d) => 570 + d.random * 80)
+                .attr("r", (d) => areaScale(d.missing))
+                .attr("stroke-width", 0.4)
+                .style("stroke-opacity", (d) => opacityScale(d.missing) + 0.1)
+                .style("fill-opacity", (d) => opacityScale(d.missing));
+            });
+        };
+
+        // Play-knappen
+
+        // mouseover funktion
+        var over = function (d) {
+          d3.select(this)
+            .style("fill", main_col);
+        };
+
+        // move funktion
+        var move = function (d) {
+          d3.select(this)
+            .style("fill", main_col);
+        };
+
+        // bort funktion
+        var leave = function (d) {
+          d3.select(this).style("fill", white_col);
+        };
+
+        // hastighetsknapparna
+
+        // 1x
+        var speedDownLow = function (d) {
+          d3.select(this)
+            .transition()
+            .duration(1000)
+            .style("fill", button_over_col)
+            .style("stroke", white_col)
+            .style("stroke-width", "2px")
+            .style("stroke-opacity", 0.8);
+
+          d3.selectAll("circle.medium_button, circle.high_button")
+            .transition()
+            .duration(1000)
+            .style("fill", back_col)
+            .style("stroke", moderate_col)
+            .style("stroke-width", "1px")
+            .style("stroke-opacity", 1);
+
+          in_delay = 20;
+          tot_delay = 5505 * in_delay;
+
+          p1 = p1_1;
+
+          array1 = p1 + p2 + p3;
+
+          joinLines1.transition().duration(500).attr("points", array1);
+        };
+
+        // 2x
+        var speedDownMedium = function (d) {
+          d3.select(this)
+            .transition()
+            .duration(1000)
+            .style("fill", button_over_col)
+            .style("stroke", white_col)
+            .style("stroke-width", "2px")
+            .style("stroke-opacity", 0.8);
+
+          d3.selectAll("circle.low_button, circle.high_button")
+            .transition()
+            .duration(1000)
+            .style("fill", back_col)
+            .style("stroke", moderate_col)
+            .style("stroke-width", "1px")
+            .style("stroke-opacity", 1);
+
+          in_delay = 10;
+          tot_delay = 5505 * in_delay;
+
+          p1 = p1_2;
+
+          array1 = p1 + p2 + p3;
+
+          joinLines1.transition().duration(500).attr("points", array1);
+        };
+
+        // 4x
+        var speedDownHigh = function (d) {
+          d3.select(this)
+            .transition()
+            .duration(1000)
+            .style("fill", button_over_col)
+            .style("stroke", white_col)
+            .style("stroke-width", "2px")
+            .style("stroke-opacity", 0.8);
+
+          d3.selectAll("circle.low_button, circle.medium_button")
+            .transition()
+            .duration(1000)
+            .style("fill", back_col)
+            .style("stroke", moderate_col)
+            .style("stroke-width", "1px")
+            .style("stroke-opacity", 1);
+
+          in_delay = 5;
+          tot_delay = 5505 * in_delay;
+
+          p1 = p1_3;
+
+          array1 = p1 + p2 + p3;
+
+          joinLines1.transition().duration(500).attr("points", array1);
+        };
+
+        // över
+        var overGeneral = function (d) {
+          d3.select(this).transition().duration(200).style("fill", dark_col);
+        };
+
+        // bort
+        var leaveGeneral = function (d) {
+          d3.select(this).transition().duration(200).style("fill", back_col);
+        };
+
+        // över
+        var overGeneral2 = function (d) {
+          d3.select(this).transition().duration(200).style("stroke", "grey");
+        };
+
+        // bort
+        var leaveGeneral2 = function (d) {
+          d3.select(this).transition().duration(200).style("stroke", white_col);
+        };
+
+        // projektionerna on(off)
+
+        // on Projektion
+        var onProj = function (d) {
+          d3.select(this)
+            .transition()
+            .duration(1000)
+            .style("fill", button_over_col)
+            .style("stroke", white_col)
+            .style("stroke-width", "2px")
+            .style("stroke-opacity", 0.8);
+
+          d3.select("circle.off_proj")
+            .transition()
+            .duration(1000)
+            .style("fill", back_col)
+            .style("stroke", moderate_col)
+            .style("stroke-width", "1px")
+            .style("stroke-opacity", 1);
+
+          p2 = p2_1;
+
+          array1 = p1 + p2 + p3;
+
+          joinLines1.transition().duration(500).attr("points", array1);
+
+          proj_stroke = "0.2px";
+          d3.selectAll("line.time_lines").style("stroke-width", proj_stroke);
+        };
+
+        // off Projektion
+        var offProj = function (d) {
+          d3.select(this)
+            .transition()
+            .duration(1000)
+            .style("fill", button_over_col)
+            .style("stroke", white_col)
+            .style("stroke-width", "2px")
+            .style("stroke-opacity", 0.8);
+
+          d3.select("circle.on_proj")
+            .transition()
+            .duration(1000)
+            .style("fill", back_col)
+            .style("stroke", moderate_col)
+            .style("stroke-width", "1px")
+            .style("stroke-opacity", 1);
+
+          proj_stroke = "0px";
+
+          d3.selectAll("line.time_lines")
+            .style("stroke-width", proj_stroke)
+            .style("stroke-opacity", (d) => projOpacScale(d.missing));
+
+          p2 = p2_2;
+
+          array1 = p1 + p2 + p3;
+
+          joinLines1.transition().duration(500).attr("points", array1);
+        };
+        // region
+        var regionDown = function (d) {
+          d3.select(this)
+            .transition()
+            .duration(1000)
+            .style("fill", button_over_col)
+            .style("stroke", white_col)
+            .style("stroke-width", "2px")
+            .style("stroke-opacity", 0.8);
+
+          d3.select(".cause_button")
+            .transition()
+            .duration(1000)
+            .style("fill", back_col)
+            .style("stroke", moderate_col)
+            .style("stroke-width", "1px")
+            .style("stroke-opacity", 1);
+
+          regionLegend
+            .transition()
+            .duration(1000)
+            .delay(500)
+            .style("opacity", 1);
+
+          causeLegend
+            .transition()
+            .duration(1000)
+            .delay(500)
+            .style("opacity", 0);
+
+          d3.selectAll("circle.main_circles")
+            .style("stroke", (d) => regionScale(d.region))
+            .style("fill", (d) => regionScale(d.region));
+
+          d3.selectAll("circle.time_circles")
+            .style("stroke", (d) => regionScale(d.region))
+            .style("fill", (d) => regionScale(d.region));
+
+          p4 = p4_1;
+
+          array2 = p3 + p4 + p5 + p6;
+
+          joinLines2.transition().duration(500).attr("points", array2);
+
+          d3.selectAll("line.time_lines")
+            .style("stroke", (d) => regionScale(d.region))
+            .style("stroke", (d) => causeScale(d.region))
+            .style("stroke", (d) => colorScale(d.missing));
+
+          regionLegend.raise();
+
+          invert.transition().duration(1000).style("opacity", 1);
+
+          d3.select(".invert_region").raise();
+
+          d3.select(".invert_text").text("Invert Selected Regions");
+        };
+
+        // orsak
+        var causeDown = function (d) {
+          d3.select(this)
+            .transition()
+            .duration(1000)
+            .style("fill", button_over_col)
+            .style("stroke", white_col)
+            .style("stroke-width", "2px")
+            .style("stroke-opacity", 0.8);
+
+          d3.select(".region_button")
+            .transition()
+            .duration(1000)
+            .style("fill", back_col)
+            .style("stroke", moderate_col)
+            .style("stroke-width", "1px")
+            .style("stroke-opacity", 1);
+
+          regionLegend
+            .transition()
+            .duration(1000)
+            .delay(500)
+            .style("opacity", 0);
+
+          causeLegend
+            .transition()
+            .duration(1000)
+            .delay(500)
+            .style("opacity", 1);
+
+          d3.selectAll("circle.main_circles")
+            .style("stroke", (d) => causeScale(d.region))
+            .style("fill", (d) => causeScale(d.region));
+
+          d3.selectAll("circle.time_circles")
+            .style("stroke", (d) => causeScale(d.region))
+            .style("fill", (d) => causeScale(d.region));
+
+          p4 = p4_2;
+
+          array2 = p3 + p4 + p5 + p6;
+
+          joinLines2.transition().duration(500).attr("points", array2);
+
+          d3.selectAll("line.time_lines")
+            .style("stroke", (d) => regionScale(d.region))
+            .style("stroke", (d) => causeScale(d.region))
+            .style("stroke", (d) => colorScale(d.missing));
+
+          causeLegend.raise();
+
+          invert.transition().duration(1000).style("opacity", 1);
+
+          d3.select(".invert_cause").raise();
+
+          d3.select(".invert_text")
+            .transition()
+            .duration(1000)
+            .text("Invert Selected Causes");
+        };
+
+        // ändra knapparnas funktion
+
+        // ändra region
+        var invertRegion = function (d) {
+          for (var i = 0; i < 4; i++) {
+            regionFilter(i);
+          }
+        };
+        // ändra orsak
+        var invertCause = function (d) {
+          for (var i = 0; i < 10; i++) {
+          causeFilter(i);
+          }
+          };
+
+        // start knappen
+
+        // lägg till g element
+        var startButton = svg
+          .append("g")
+          .classed("start", true)
+          .attr("transform", "translate(-4,604.5)");
+
+        // start cirkel
+        startButton
+          .append("circle")
+          .classed("start_circle", true)
+          .attr("cx", 4.5)
+          .attr("cy", 6)
+          .attr("r", 10)
+          .style("stroke", blue_col)
+          .attr("stroke-width", 0.7)
+          .style("fill", white_col)
+          .style("fill-opacity", 0);
+
+        // start knapp
+        startButton
+          .append("polygon")
+          .classed("start_polygon", true)
+          .attr("points", "0,0 12,6 0,12")
+          .attr("stroke-width", 0.7)
+          .style("fill", white_col)
+          .style("opacity", 1)
+          .attr("transform", "translate(0,0)")
+          .on("mousedown", play)
+          .on("mouseover", over)
+          .on("mouseleave", leave)
+          .on("mousemove", move);
+
+        // start text
+        startButton
+          .append("text")
+          .classed("start_text", true)
+          .attr("x", 450)
+          .attr("y", -7)
+          .text("Tidslinje")
+          .style("fill", main_col)
+          .style("font-size", "10px")
+          .attr("transform", "translate(0,-40)");
+
+        // slut cirkel
+
+        svg
+          .append("circle")
+          .classed("end_circle", true)
+          .attr("cx", timeScale(parseTime("26-Jun-2019")))
+          .attr("cy", 610)
+          .attr("r", 2)
+          .style("stroke", blue_col)
+          .style("fill", white_col);
+
+        // separator
+
+        var sepLine = svg
+          .append("line")
+          .classed("sep_line", true)
+          .attr("x1", 960)
+          .attr("y1", -20)
+          .attr("x2", 960)
+          .attr("y2", 660)
+          .style("stroke", dark_col)
+          .style("stroke-width", 0.3)
+          .style("opacity", 0);
+
+        // kontroller och legenden
+
+        // meny
+        var controller = svg
+          .append("g")
+          .classed("controller", true)
+          .attr("transform", "translate(980,190)");
+
+        // speed knapp
+        var legendTitle = controller
+          .append("g")
+          .attr("transform", "translate(17,-70)");
+
+        // speed text
+        legendTitle
+          .append("text")
+          .attr("x", 0)
+          .attr("y", -30)
+          .html("Controls & Legend")
+          .style("fill", white_col)
+          .style("font-size", "10px")
+          .style("opacity", 0.6)
+          .attr("transform", "translate(-20,3)");
+
+        // speed knapp
+        var speedButton = controller
+          .append("g")
+          .classed("speed_button", true)
+          .attr("transform", "translate(17,-70)");
+
+        // speed text
+        speedButton
+          .append("text")
+          .classed("start_text", true)
+          .attr("x", 0)
+          .attr("y", 0)
+          .text("Timelapse :")
+          .style("fill", main_col)
+          .style("font-size", "8px")
+          .attr("transform", "translate(-20,3)");
+
+        speedButton
+          .append("text")
+          .classed("start_text", true)
+          .attr("x", 62)
+          .attr("y", 0)
+          .text("1X")
+          .style("fill", main_col)
+          .style("font-size", "8px")
+          .attr("transform", "translate(-20,3)");
+
+        speedButton
+          .append("text")
+          .classed("start_text", true)
+          .attr("x", 92)
+          .attr("y", 0)
+          .text("2X")
+          .style("fill", main_col)
+          .style("font-size", "8px")
+          .attr("transform", "translate(-20,3)");
+
+        speedButton
+          .append("text")
+          .classed("start_text", true)
+          .attr("x", 122)
+          .attr("y", 0)
+          .text("4X")
+          .style("fill", main_col)
+          .style("font-size", "8px")
+          .attr("transform", "translate(-20,3)");
+
+        // speed circles
+        // långsam
+        speedButton
+          .append("circle")
+          .attr("cy", 0)
+          .attr("r", 5)
+          .style("stroke", white_col)
+          .style("stroke-width", "2px")
+          .classed("low_button", true)
+          .attr("cx", 34.5)
+          .style("fill", back_col)
+          .style("fill-opacity", 1)
+          .style("stroke-opacity", 0.8)
+          .on("mousedown", speedDownLow)
+          .on("mouseover", overGeneral)
+          .on("mouseleave", leaveGeneral);
+
+        // medel
+        speedButton
+          .append("circle")
+          .classed("medium_button", true)
+          .style("fill", button_over_col)
+          .style("stroke", moderate_col)
+          .attr("stroke-width", 0.7)
+          .style("stroke-opacity", 1)
+          .on("mousedown", speedDownMedium)
+          .attr("cx", 64)
+          .attr("cy", 0)
+          .attr("r", 5)
+          .style("fill", button_over_col)
+          .style("fill-opacity", 1)
+          .on("mouseover", overGeneral)
+          .on("mouseleave", leaveGeneral);
+
+        // snabb
+        speedButton
+          .append("circle")
+          .classed("high_button", true)
+          .style("fill-opacity", 1)
+          .on("mousedown", speedDownHigh)
+          .on("mouseover", overGeneral)
+          .attr("cx", 94)
+          .attr("cy", 0)
+          .attr("r", 5)
+          .style("stroke", moderate_col)
+          .attr("stroke-width", 0.7)
+          .style("fill", back_col)
+          .on("mouseleave", leaveGeneral);
+
+        // projektionsknapp on/off
+        var projectionButton = controller
+          .append("g")
+          .classed("proj_button", true)
+          .attr("transform", "translate(0,-30)");
+
+        // rubrik
+        projectionButton
+          .append("text")
+          .classed("proj_text", true)
+          .attr("x", 0)
+          .attr("y", -8)
+          .text("Projections :")
+          .style("fill", main_col)
+          .style("font-size", "8px")
+          .attr("transform", "translate(-2,0)");
+
+        projectionButton
+          .append("text")
+          .classed("proj_text", true)
+          .attr("x", 75)
+          .attr("y", -8)
+          .text("ON")
+          .style("fill", main_col)
+          .style("font-size", "8px")
+          .attr("transform", "translate(-2,0)");
+
+        projectionButton
+          .append("text")
+          .classed("proj_text", true)
+          .attr("x", 118)
+          .attr("y", -8)
+          .text("OFF")
+          .style("fill", main_col)
+          .style("font-size", "8px")
+          .attr("transform", "translate(-2,0)");
+
+        // byt cirklar
+        //on
+        projectionButton
+          .append("circle")
+          .classed("on_proj", true)
+          .style("stroke-opacity", 0.8)
+          .style("fill", back_col)
+          .style("fill-opacity", 1)
+          .on("mousedown", onProj)
+          .on("mouseover", overGeneral)
+          .attr("cx", 61)
+          .attr("cy", -11)
+          .attr("r", 6)
+          .style("stroke", white_col)
+          .style("stroke-width", "2px")
+          .on("mouseleave", leaveGeneral);
+
+        //off
+        projectionButton
+          .append("circle")
+          .classed("off_proj", true)
+          .attr("cx", 105)
+          .attr("cy", -11)
+          .attr("r", 6)
+          .style("stroke-opacity", 0.8)
+          .on("mousedown", offProj)
+          .on("mouseover", overGeneral)
+          .style("fill", button_over_col)
+          .style("fill-opacity", 1)
+          .style("stroke", moderate_col)
+          .style("stroke-width", 1)
+          .on("mouseleave", leaveGeneral);
+
+        // para ihop linjerna
+        var p1_1 = "51.5,-70 ";
+        var p1_2 = "81,-70 ";
+        var p1_3 = "111,-70 ";
+        var p2_1 = "62,-41 ";
+        var p2_2 = "105,-41 ";
+        var p3_1 = "59,-11 ";
+        var p3_2 = "102,-11 ";
+        var p4_1 = "39,19 ";
+        var p4_2 = "94,19 ";
+        var p5 = "10,55 ";
+        var p6 = "10,190";
+
+        var p1 = p1_1;
+        var p2 = p2_1;
+        var p3 = p3_2;
+        var p4 = p4_1;
+
+        var array1 = p1 + p2 + p3;
+        var array2 = p3_1 + p4 + p5 + p6;
+
+        // polyline1
+        var joinLines1 = controller
+          .append("polyline")
+          .classed("join_line", true)
+          .attr("points", array1)
+          .style("fill", "none")
+          .style("stroke", white_col)
+          .style("stroke-width", 0.5)
+          .lower()
+          .attr("transform", "translate(0,0)");
+
+        // polyline1
+        var joinLines2 = controller
+          .append("polyline")
+          .classed("join_line", true)
+          .attr("points", array2)
+          .style("fill", "none")
+          .style("stroke", white_col)
+          .style("stroke-width", 0.5)
+          .lower()
+          .attr("transform", "translate(0,0)");
+
+        // regionernas kategori legend
+
+        // lägg till legend
+        var regionLegend = controller
+          .append("g")
+          .attr("class", "region_legend")
+          .attr("transform", "translate(10,55)");
+
+        // draw legend
+        regionLegend
+          .selectAll("g.regions")
+          .data(regions_en)
+          .join("g")
+          .attr("class", "regions")
+          .each(function (d, i) {
+            d3.select(this)
+              .append("circle")
+              .style("fill-opacity", 1)
+              .style("stroke", white_col)
+              .style("stroke-opacity", 0.8)
+              .style("stroke-width", 1.5)
+              .on("mouseover", overGeneral2)
+              .classed("region_circle" + i, true)
+              .attr("cy", i * 15)
+              .attr("cx", 0)
+              .attr("r", 6)
+              .style("fill", (d) => regionScale(d))
+              .on("mouseleave", leaveGeneral2);
+
+            d3.select(this)
+              .append("text")
+              .attr("y", i * 15)
+              .attr("x", 5)
+              .text(d)
+              .style("font-size", "8px")
+              .style("fill", main_col)
+              .style("alignment-baseline", "middle")
+              .attr("transform", `translate(11, 1)`);
+          });
+
+        // orsakernas katergori legend
+
+        // lägg till kategori legend
+        var causeLegend = controller
+          .append("g")
+          .attr("class", "cause_legend")
+          .attr("transform", "translate(10,55)");
+
+        // draw legend
+        causeLegend
+          .selectAll("g.causes")
+          .data(causes_en)
+          .join("g")
+          .attr("class", "causes")
+          .each(function (d, i) {
+            d3.select(this)
+              .append("circle")
+              .classed("cause_circle" + i, true)
+              .style("stroke", white_col)
+              .style("stroke-opacity", 0.8)
+              .style("stroke-width", 1.5)
+              .attr("cy", i * 15)
+              .attr("cx", 0)
+              .attr("r", 6)
+              .style("fill", (d) => causeScale(d))
+              .style("fill-opacity", 1)
+              .style("stroke", (d) => causeScale(d))
+              .on("mouseover", overGeneral2)
+              .on("mouseleave", leaveGeneral2);
+
+            d3.select(this)
+              .append("text")
+              .attr("y", i * 15)
+              .attr("x", 5)
+              .text(d)
+              .style("font-size", "8px")
+              .style("fill", main_col)
+              .style("alignment-baseline", "middle")
+              .attr("transform", `translate(11, 1)`);
+          });
+
+        // ändra knappar
+
+        // lägg till ändringsknappar
+        var invert = controller
+          .append("g")
+          .attr("class", "reset")
+          .attr("transform", "translate(10,230)");
+
+        // rubrik
+        invert
+          .append("text")
+          .classed("invert_text", true)
+          .attr("x", 18)
+          .attr("y", -8)
+          .text("Invert Selection")
+          .style("fill", main_col)
+          .style("font-size", "8px")
+          .attr("transform", "translate(-2,0)");
+
+        // cirkeln
+        // ändra region
+        invert
+          .append("circle")
+          .classed("invert_region", true)
+          .attr("cx", 0)
+          .style("stroke-opacity", 0.8)
+          .style("fill", back_col)
+          .style("fill-opacity", 1)
+          .on("mousedown", invertRegion)
+          .on("mouseover", overGeneral)
+          .attr("cy", -11)
+          .attr("r", 7)
+          .style("stroke", moderate_col)
+          .style("stroke-width", "2px")
+          .on("mouseleave", leaveGeneral);
+
+        // ändra orsak
+        invert
+          .append("circle")
+          .classed("invert_cause", true)
+          .attr("cx", 0)
+          .attr("cy", -11)
+          .attr("r", 7)
+          .style("stroke", moderate_col)
+          .style("stroke-width", "2px")
+          .style("stroke-opacity", 0.8)
+          .style("fill", back_col)
+          .style("fill-opacity", 1)
+          .on("mousedown", invertCause)
+          .on("mouseover", overGeneral)
+          .on("mouseleave", leaveGeneral);
+
+        // storleks legend
+
+        // lägg till storleks legend
+        var sizeLegend = controller
+          .append("g")
+          .attr("class", "sizelegend")
+          .attr("transform", `translate(${[0, 300]})`);
+
+        // draw legend
+        sizeLegend
+          .selectAll("g.sizeItem")
+          .data([1, 10, 50, 100, 200, 500, 1000])
+          .join("g")
+          .attr("class", "sizeItem")
+          .each(function (d, i) {
+            d3.select(this)
+              .append("circle")
+              .attr("cx", i * 11 + 1)
+              .attr("cy", 0)
+              .attr("r", (d) => areaScale(d))
+              .style("fill", (d) => colorScale(d))
+              .style("fill-opacity", (d) => opacityScale(d))
+              .style("stroke", (d) => colorScale(d))
+              .style("stroke-opacity", 1)
+              .style("stroke-width", "0.4px");
+          });
+
+        sizeLegend
+          .append("text")
+          .attr("x", 0)
+          .attr("y", 20)
+          .text("1")
+          .style("font-size", "6.5px")
+          .style("fill", main_col)
+          .style("alignment-baseline", "middle");
+
+        sizeLegend
+          .append("text")
+          .attr("x", 28)
+          .attr("y", 20)
+          .text("100")
+          .style("font-size", "6.5px")
+          .style("fill", main_col)
+          .style("alignment-baseline", "middle");
+
+        sizeLegend
+          .append("text")
+          .attr("x", 58)
+          .style("font-size", "6.5px")
+          .attr("y", 20)
+          .text("1000")
+          .style("fill", main_col)
+          .style("alignment-baseline", "middle");
+
+        sizeLegend
+          .append("text")
+          .style("fill", main_col)
+          .attr("x", 102)
+          .attr("y", 20)
+          .text("Hot Area")
+          .style("font-size", "6.5px")
+          .style("alignment-baseline", "middle");
+
+        sizeLegend
+          .append("circle")
+          .attr("r", areaScale(700))
+          .style("fill", "grey")
+          .style("fill-opacity", 0)
+          .style("stroke", white_col)
+          .attr("cx", 110)
+          .attr("cy", 0)
+          .style("stroke-opacity", 1)
+          .style("stroke-width", "0.4px");
+
+        sizeLegend
+          .append("text")
+          .attr("x", 0)
+          .attr("y", -42)
+          .style("font-size", "7.1px")
+          .style("fill", main_col)
+          .style("alignment-baseline", "middle")
+          .text("Area of circle represents the total");
+
+        sizeLegend
+          .append("text")
+          .attr("x", 0)
+          .attr("y", -30)
+          .style("font-size", "7.1px")
+          .style("fill", main_col)
+          .style("alignment-baseline", "middle")
+          .text("number of dead/missing per incident");
+
+        // första möjligheten
+
+        regionLegend.style("opacity", 0);
+
+        causeLegend.style("opacity", 0);
+
+        joinLines2.style("opacity", 0);
+
+        d3.selectAll("line.time_lines")
+          .style("stroke", (d) => projColorScale(d.missing))
+          .style("stroke-width", "0.2px");
+
+        invert.style("opacity", 0);
+
+        // region filter funktioner
+
+        // filter 1
+        var checked = Array(4).fill(1);
+
+        function regionFilter(index) {
+          if (checked[index] == 1) {
+            checked[index] = 0;
+            d3.select(`circle.region_circle${index}`)
+              .transition()
+              .duration(200)
+              .attr("r", 5)
+              .style("fill", back_col);
+
+            d3.selectAll(
+              "circle.main_circles, circle.contour_circles, circle.time_circles, line.time_lines"
+            )
+              .filter((d) => d.region == regions_en[index])
+              .style("visibility", "hidden");
+          } else {
+            checked[index] = 1;
+            d3.select(`circle.region_circle${index}`)
+              .transition()
+              .duration(200)
+              .attr("r", 6)
+              .style("fill", (d) => regionScale(d));
+
+            d3.selectAll(
+              "circle.main_circles, circle.contour_circles, circle.time_circles, line.time_lines"
+            )
+              .filter((d) => d.region == regions_en[index])
+              .style("visibility", "visible");
+          }
+        }
+
+        // orsaks filter
+
+        var checked = Array(4).fill(1);
+
+        function causeFilter(index) {
+          if (checked[index] == 1) {
+            checked[index] = 0;
+            d3.select(`circle.cause_circle${index}`)
+              .transition()
+              .duration(200)
+              .attr("r", 5)
+              .style("fill", back_col);
+
+            for (var i = 0; i < 4; i++) {
+              d3.select(`circle.region_circle${i}`).on(
+                "mousedown",
+                function () {
+                  regionFilter(i);
+                }
+              );
+            }
+
+            d3.selectAll(
+              "circle.main_circles, circle.contour_circles, circle.time_circles, line.time_lines"
+            )
+              .filter((d) => d.region == causes_en[index])
+              .style("visibility", "hidden");
+          } else {
+            checked[index] = 1;
+            d3.select(`circle.cause_circle${index}`)
+              .transition()
+              .duration(200)
+              .attr("r", 6)
+              .style("fill", (d) => causeScale(d));
+
+            d3.selectAll(
+              "circle.main_circles, circle.contour_circles, circle.time_circles, line.time_lines"
+            )
+              .filter((d) => d.region == causes_en[index])
+              .style("visibility", "visible");
+          }
+        }
+
+        for (var i = 0; i < 4; i++) {
+          d3.select(`circle.cause_circle${i}`).on(
+            "mousedown",
+            causeFilter.bind(null, i)
+          );
+        }
+
+        for (var i = 0; i < 10; i++) {
+          d3.select(`circle.cause_circle${i}`).on("mousedown", function () {
+            causeFilter(i);
+          });
+        }
+
+        // punkters tooltip
+
+        var tooltip = div_main
+          .append("div")
+          .attr("class", "tooltip")
+          .style("opacity", 0)
+          .style("background-color", "rgba(1, 12, 22, 0.5)")
+          .style("border-radius", "9px")
+          .style("padding", "4px")
+          .style("pointer-events", "none")
+          .style("position", "absolute")
+          .style("text-align", "center")
+          .style("width", "100px")
+          .style("height", "50px")
+          .style("font", "9px Tahoma")
+          .style("color", tooltip_col)
+          .style("line-height", "1")
+          .style("display", "inline");
+
+        // move
+        var mousemove = function (d) {
+          tooltip.transition().duration(500).style("opacity", 0.99);
+
+          tooltip
+            .html(
+              "<b>" +
+                d.missing +
+                " </b> Dead or Missing <br/><span>-----------------------------</span></br> " +
+                d.missing +
+                "</br>" +
+                formatTime(d.date)
+            )
+            .style("left", d3.event.pageX - 0 + "px")
+            .style("top", d3.event.pageY - 60 + "px");
+
+          d3.select("div.tooltip b")
+            .style("font-size", "10px")
+            .style("color", white_col);
+
+          d3.select("div.tooltip span")
+            .style("font-size", "5px")
+            .style("color", "grey");
+
+          console.log(d3.select(this).attr("cx"), d3.select(this).attr("cy"));
+          console.log(d3.select(this).style("stroke-opacity"));
+        };
+
+        // bort
+        var mouseleave = function (d) {
+          tooltip.transition().duration(2000).style("opacity", 0);
+        };
+
+        // kalla på tooltip
+        d3.selectAll("circle.contour_circles")
+          .on("mousemove", mousemove)
+          .on("mouseleave", mouseleave);
+
+        // regionens tooltip
+
+        var region_tooltip = div_main
+          .append("div")
+          .attr("class", "region_tooltip")
+          .style("opacity", 0)
+          .style("color", tooltip_col)
+          .style("background-color", "none")
+          .style("border-radius", "9px")
+          .style("padding", "4px")
+          .style("line-height", "2")
+          .style("display", "inline")
+          .style("pointer-events", "none")
+          .style("position", "absolute")
+          .style("text-align", "center")
+          .style("width", "120px")
+          .style("height", "30px")
+          .style("font", "11px Tahoma")
+
+        // move
+        var region_mousemove = function (d) {
+          region_tooltip.transition().duration(100).style("opacity", 1);
+
+          region_tooltip
+            .html("<b> " + d.properties.name + "</b>")
+            .style("left", d3.event.pageX - 30 + "px")
+            .style("top", d3.event.pageY - 30 + "px");
+
+          d3.select("div.region_tooltip b")
+            .style("color", tooltip_col)
+            .style("font-size", "10px")
+            .style("background-color", "rgba(1, 12, 22, 0.5)")
+            .style("padding", "5px");
+
+          d3.select("div.tooltip span")
+            .style("font-size", "5px")
+            .style("color", "grey");
+
+          d3.select(this)
+            .style("fill", region_over_col)
+            .style("stroke-opacity", 1)
+            .style("fill-opacity", 0.6)
+            .style("stroke", moderate_col);
+        };
+
+        // bort
+        var region_mouseleave = function (d) {
+          region_tooltip
+            .transition()
+            .delay(2000)
+            .duration(200)
+            .style("opacity", 0);
+
+          d3.select(this)
+            .style("fill", country_col)
+            .style("stroke-opacity", 0.8)
+            .style("fill-opacity", 0.4)
+            .style("stroke", border_col);
+        };
+
+        // kalla på tooltip
+        d3.selectAll("path.region")
+          .on("mousemove", region_mousemove)
+          .on("mouseleave", region_mouseleave);
+      } 
+    </script>
+  </body>
+</html>
